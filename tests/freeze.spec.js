@@ -371,16 +371,32 @@ test('FreezeHost 自动续期', async () => {
                     let timeDisplay = '未知时效';
 
                     if (renewalStatusText) {
-                        const daysMatch = renewalStatusText.match(/(\d+(?:\.\d+)?)\s*day/i);
-                        if (daysMatch) {
-                            const remainingDaysVal = parseFloat(daysMatch[1]);
-                            if (remainingDaysVal.toString().includes('.')) {
-                                const d = Math.floor(remainingDaysVal);
-                                const h = Math.round((remainingDaysVal - d) * 24);
-                                timeDisplay = `${d}天 ${h}小时`;
-                            } else {
-                                timeDisplay = `${remainingDaysVal}天 0小时`;
-                            }
+                        let d = 0, h = 0, m = 0;
+                        let parsed = false;
+                        let remainingDaysVal = -1;
+
+                        const dMatch = renewalStatusText.match(/(\d+(?:\.\d+)?)\s*day/i);
+                        const hMatch = renewalStatusText.match(/(\d+(?:\.\d+)?)\s*hour/i);
+                        const mMatch = renewalStatusText.match(/(\d+(?:\.\d+)?)\s*minute/i);
+
+                        if (dMatch || hMatch || mMatch) {
+                            const valD = dMatch ? parseFloat(dMatch[1]) : 0;
+                            const valH = hMatch ? parseFloat(hMatch[1]) : 0;
+                            const valM = mMatch ? parseFloat(mMatch[1]) : 0;
+
+                            // 统一折算为总天数
+                            remainingDaysVal = valD + (valH / 24) + (valM / 1440);
+
+                            // 再重新干净地分解为天、时、分
+                            d = Math.floor(remainingDaysVal);
+                            const tH = (remainingDaysVal - d) * 24;
+                            h = Math.floor(tH);
+                            m = Math.round((tH - h) * 60);
+                            parsed = true;
+                        }
+
+                        if (parsed) {
+                            timeDisplay = `${d}天 ${h}小时 ${m}分钟`;
                             console.log(`  ⏳ 精确时效计算：${timeDisplay}`);
                             
                             if (remainingDaysVal > 7) {
@@ -393,18 +409,17 @@ test('FreezeHost 自动续期', async () => {
                     }
 
                     // 准备推送排版
-                    let statusEmoji = '🟢';
                     let statusText = '';
                     let finalTimeDisplay = timeDisplay;
 
                     const pushResult = () => {
-                        allSummary.push(` ${statusEmoji} [${serverName}]`);
+                        allSummary.push(`  📦 ${serverName}`);
                         allSummary.push(`  ├─ 状态: ${statusText}`);
-                        allSummary.push(`  └─ 时效: ${finalTimeDisplay}\n`);
+                        allSummary.push(`  └─ 剩余: ${finalTimeDisplay}\n`);
                     };
 
                     if (!shouldRenew) {
-                        statusText = `🛡️ 无需续期`;
+                        statusText = `无需续期`;
                         pushResult();
                         continue;
                     }
@@ -425,7 +440,6 @@ test('FreezeHost 自动续期', async () => {
                         const btnText = (await renewModalBtn.innerText()).trim();
 
                         if (!btnText.toLowerCase().includes('renew instance')) {
-                            statusEmoji = '🟡';
                             statusText = `⏰ 未到续期条件`;
                             console.log('  ⏰ 尚未到续期时间，跳过');
                             pushResult();
@@ -443,25 +457,20 @@ test('FreezeHost 自动续期', async () => {
                         const finalUrl = page.url();
                         if (finalUrl.includes('success=RENEWED')) {
                             console.log('  🎉 续期成功！');
-                            statusEmoji = '🟢';
                             statusText = `✅ 续期成功`;
-                            finalTimeDisplay = `14天 0小时`; // 成功基本就是满血14天
+                            finalTimeDisplay = `14天 0小时 0分钟`; // 成功基本就是满血14天
                         } else if (finalUrl.includes('err=CANNOTAFFORDRENEWAL')) {
                             console.log('  ⚠️ 余额不足，无法续期');
-                            statusEmoji = '🔴';
                             statusText = `⚠️ 余额不足`;
                         } else if (finalUrl.includes('err=TOOEARLY')) {
                             console.log('  ⏰ 尚未到续期时间');
-                            statusEmoji = '🟡';
                             statusText = `⏰ 未到续期限制`;
                         } else {
                             console.log(`  ⚠️ 续期结果未知：${finalUrl}`);
-                            statusEmoji = '🟡';
                             statusText = `❓ 结果未知`;
                         }
                     } catch (err) {
                         console.log(`  ❌ 处理此服务器时发生错误: ${err.message}`);
-                        statusEmoji = '🔴';
                         statusText = `❌ 异常 (${err.message.slice(0, 15)})`;
                         globalHasError = true;
                     }
